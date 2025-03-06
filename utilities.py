@@ -4,6 +4,21 @@ import os
 import numpy as np
 
 def create_subject(patient_id, category, weight, height, base_path="Dataset/Train"):
+    """
+    Create a torchio subject from a patient id and a base path
+    
+    Parameters
+    ----------
+    patient_id : str
+    category : str
+    weight : float
+    height : float
+    base_path : str
+    
+    Returns
+    -------
+    subject : tio.Subject
+    """
     patient_path = os.path.join(base_path, patient_id)
 
     subject = tio.Subject(
@@ -20,6 +35,18 @@ def create_subject(patient_id, category, weight, height, base_path="Dataset/Trai
     return subject
 
 def load_dataset(type):
+    """
+    Load the dataset from the csv file and images
+    
+    Parameters
+    ----------
+    type : str
+        'Train' or 'Test'
+    
+    Returns
+    -------
+    subjects : tio.SubjectsDataset
+    """
     if type == "Train":
         df = pd.read_csv('Dataset/metaDataTrain.csv')
     elif type == "Test":
@@ -47,9 +74,24 @@ def load_dataset(type):
     return tio.SubjectsDataset(subjects)
 
 def create_features_matrix(dataset, category=False):
+    """
+    Create a matrix of features from a dataset
+    
+    Parameters
+    ----------
+    dataset : tio.SubjectsDataset
+    category : bool
+        If True, the function will return the categories (for training)
+        
+    Returns
+    -------
+    X : np.array
+    y : np.array
+    """
     height = []
     weight = []
     imc = []
+    #add here features
     category2 = []
     for subject in dataset:
         height.append(subject['height'])
@@ -61,13 +103,23 @@ def create_features_matrix(dataset, category=False):
         return np.array([height, weight, imc]).T, np.array(category2)
     return np.array([height, weight, imc]).T
 
-def classifier_to_submission(clf, dataset, file_name="submission"):
-    X = create_features_matrix(dataset,category=False)
-    ids = [subject['id'] for subject in dataset]
+def submission(clf, file_name="submission"):
+    """
+    Create a submission file for Kaggle from a classifier
+    
+    Parameters
+    ----------
+    clf : sklearn classifier
+    file_name : str
+    
+    Returns
+    -------
+    None
+    """
+    dataset_test = load_dataset("Test")
+    X = create_features_matrix(dataset_test,category=False)
+    ids = [subject['id'] for subject in dataset_test]
     y_pred = clf.predict(X)
     df = pd.DataFrame(list(zip(ids, y_pred)), columns=["Id","Category"])
     df.to_csv(file_name+".csv", index=False,sep=",")
-    
-def submission(clf, file_name = "submission"):
-    dataset_test = load_dataset("Test")
-    classifier_to_submission(clf, dataset_test, file_name)
+    print(f"Submission file {file_name}.csv created")
