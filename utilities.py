@@ -6,6 +6,8 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
+import torch
+import copy
 
 def create_subject(patient_id, category, weight, height, base_path="Dataset/Train"):
     """
@@ -37,7 +39,7 @@ def create_subject(patient_id, category, weight, height, base_path="Dataset/Trai
     )
     return subject
 
-def load_dataset(type,transform = True):
+def load_dataset(type,transform = True,test_from_file = False):
     """
     Load the dataset from the csv file and images
     
@@ -70,11 +72,13 @@ def load_dataset(type,transform = True):
             if type == "Train":
                 subject = create_subject(patient_id, category, weight, height, "Dataset/Train")
             else:
-                subject = create_subject(patient_id, -1, weight, height, "Dataset/Test")
+                if test_from_file:
+                    subject = create_subject(patient_id, -1, weight, height, "Dataset/Test/Segmented")
+                else:
+                    subject = create_subject(patient_id, -1, weight, height, "Dataset/Test")
             subjects.append(subject)
         except Exception as e:
             print(f"Error with patient {patient_id}: {e}")
-    print(f"Loaded {len(subjects)} subjects")
 
     if transform:
         landmarks = {
@@ -86,9 +90,29 @@ def load_dataset(type,transform = True):
         histo_stand,
         tio.RescaleIntensity(out_min_max=(0, 1)),
         ])
-        return tio.SubjectsDataset(subjects, transform=transform)
+        dataset =  tio.SubjectsDataset(subjects, transform=transform)
     
-    return tio.SubjectsDataset(subjects)
+    else:
+        dataset = tio.SubjectsDataset(subjects)
+    
+    if type == "Test" and not test_from_file:
+        for i in range(len(dataset)):
+            index = i+101
+            new_seg_ed = ft.left_ventricle_cavity_segmentation(i,"ED",dataset)
+            new_seg_es = ft.left_ventricle_cavity_segmentation(i,"ES",dataset)
+            new_seg_ed = torch.tensor(new_seg_ed).unsqueeze(0)
+            new_seg_es = torch.tensor(new_seg_es).unsqueeze(0)
+            modify_data(i,"ED_seg",new_seg_ed,dataset)
+            modify_data(i,"ES_seg",new_seg_es,dataset)
+            new_dir = Path('Dataset/Test/Segmented', str(index).zfill(3))
+            new_dir.mkdir(parents=True, exist_ok=True)
+            dataset[i]["ED_seg"].save(f"Dataset/Test/Segmented/{str(index).zfill(3)}/{str(index).zfill(3)}_ED_seg.nii")
+            dataset[i]["ES_seg"].save(f"Dataset/Test/Segmented/{str(index).zfill(3)}/{str(index).zfill(3)}_ES_seg.nii")
+            dataset[i]["ED"].save(f"Dataset/Test/Segmented/{str(index).zfill(3)}/{str(index).zfill(3)}_ED.nii")
+            dataset[i]["ES"].save(f"Dataset/Test/Segmented/{str(index).zfill(3)}/{str(index).zfill(3)}_ES.nii")
+    
+    print(f"Loaded {len(subjects)} subjects")
+    return dataset
 
 def create_landmarks_hist(ED_name = "ED_landmarks", ES_name = "ES_landmarks"):
     """
@@ -123,6 +147,25 @@ def create_landmarks_hist(ED_name = "ED_landmarks", ES_name = "ES_landmarks"):
     np.save(ED_landmarks_path, ED_landmarks)
     np.save(ES_landmarks_path, ES_landmarks)
 
+def modify_data(subject_index, type, new_data, dataset):
+    """"
+    Modify the data of a attribute of a subject in a dataset
+    
+    Parameters
+    ----------
+    subject_index : int
+    type : str
+        'ED', 'ES', 'ED_seg', 'ES_seg'
+    new_data : np.array
+    dataset : tio.SubjectsDataset
+    
+    Returns
+    -------
+    None
+    """
+    subject = copy.deepcopy(dataset[subject_index])
+    subject[type].set_data(new_data)
+    dataset._subjects[subject_index] = subject
 
 def create_features_matrix(dataset, category=False):
     """
@@ -160,8 +203,8 @@ def create_features_matrix(dataset, category=False):
         if category:
             category2.append(int(subject['category']))
         
-        voled = ft.volume_ED(cpt, dataset, test=not category)
-        voles = ft.volume_ES(cpt, dataset, test=not category)
+        voled = ft.volume_ED(cpt, dataset)
+        voles = ft.volume_ES(cpt, dataset)
         
         volume_ED1.append(voled[0])
         volume_ED2.append(voled[1])
@@ -190,7 +233,7 @@ def submission(clf, file_name="submission", plot=True):
     -------
     None
     """
-    dataset_test = load_dataset("Test")
+    dataset_test = load_dataset("Test", test_from_file=True)
     X = create_features_matrix(dataset_test,category=False)
     ids = [subject['id'] for subject in dataset_test]
     y_pred = clf.predict(X)
