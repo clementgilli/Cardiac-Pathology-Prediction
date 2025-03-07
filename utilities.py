@@ -1,3 +1,5 @@
+import features as ft
+
 import torchio as tio
 import pandas as pd
 import os
@@ -121,77 +123,6 @@ def create_landmarks_hist(ED_name = "ED_landmarks", ES_name = "ES_landmarks"):
     np.save(ED_landmarks_path, ED_landmarks)
     np.save(ES_landmarks_path, ES_landmarks)
 
-def get_ES(index, dataset):
-    """
-    Get the end-systolic image of a subject
-    
-    Parameters
-    ----------
-    index : int
-    dataset : tio.SubjectsDataset
-    
-    Returns
-    -------
-    np.array
-        Values between 0 and 255
-    """
-    return dataset[index]["ES"].data.numpy().squeeze(0)
-
-def get_ED(index, dataset):
-    """
-    Get the end-diastolic image of a subject
-    
-    Parameters
-    ----------
-    index : int
-    dataset : tio.SubjectsDataset
-    
-    Returns
-    -------
-    np.array 
-        Values between 0 and 255
-    """
-    return dataset[index]["ED"].data.numpy().squeeze(0)
-
-def get_ES_segmentation(index, dataset):
-    """
-    Get the end-systolic segmentation of a subject
-    
-    Parameters
-    ----------
-    index : int
-    dataset : tio.SubjectsDataset
-    
-    Returns
-    -------
-    np.array 
-        Values between 0 and 4:
-        0 - Background
-        1 - Right ventricle cavity
-        2 - Myocardium
-        3 - Left ventricle cavity
-    """
-    return dataset[index]["ES_seg"].data.numpy().squeeze(0)
-
-def get_ED_segmentation(index, dataset):
-    """
-    Get the end-diastolic segmentation of a subject
-    
-    Parameters
-    ----------
-    index : int
-    dataset : tio.SubjectsDataset
-    
-    Returns
-    -------
-    np.array 
-        Values between 0 and 4:
-        0 - Background
-        1 - Right ventricle cavity
-        2 - Myocardium
-        3 - Left ventricle cavity
-    """
-    return dataset[index]["ED_seg"].data.numpy().squeeze(0)
 
 def create_features_matrix(dataset, category=False):
     """
@@ -211,17 +142,39 @@ def create_features_matrix(dataset, category=False):
     height = []
     weight = []
     imc = []
-    #add here features
     category2 = []
-    for subject in dataset:
+    # add features here (à mieux faire c'est horrible là)
+    volume_ED1 = []
+    volume_ED2 = []
+    volume_ED3 = []
+    volume_ED4 = []
+    volume_ES1 = []
+    volume_ES2 = []
+    volume_ES3 = []
+    volume_ES4 = []
+    
+    for cpt, subject in enumerate(dataset):
         height.append(subject['height'])
         weight.append(subject['weight'])
         imc.append(subject['weight'] / (subject['height'] / 100) ** 2)
         if category:
             category2.append(int(subject['category']))
+        
+        voled = ft.volume_ED(cpt, dataset, test=not category)
+        voles = ft.volume_ES(cpt, dataset, test=not category)
+        
+        volume_ED1.append(voled[0])
+        volume_ED2.append(voled[1])
+        volume_ED3.append(voled[2])
+        volume_ED4.append(voled[3])
+        volume_ES1.append(voles[0])
+        volume_ES2.append(voles[1])
+        volume_ES3.append(voles[2])
+        volume_ES4.append(voles[3])
+        
     if category:
-        return np.array([height, weight, imc]).T, np.array(category2)
-    return np.array([height, weight, imc]).T
+        return np.array([height, weight, imc, volume_ED1, volume_ED2, volume_ED3, volume_ED4, volume_ES1, volume_ES2, volume_ES3, volume_ES4]).T, np.array(category2)
+    return np.array([height, weight, imc, volume_ED1, volume_ED2, volume_ED3, volume_ED4, volume_ES1, volume_ES2, volume_ES3, volume_ES4]).T
 
 def submission(clf, file_name="submission", plot=True):
     """
