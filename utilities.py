@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 import torch
 import copy
+from tqdm import tqdm
 
 def create_subject(patient_id, category, weight, height, base_path="Dataset/Train"):
     """
@@ -166,7 +167,7 @@ def modify_data(subject_index, type, new_data, dataset):
     subject[type].set_data(new_data)
     dataset._subjects[subject_index] = subject
 
-def create_features_matrix(dataset, category=False):
+def create_features_matrix(dataset, category=False, dataframe=False):
     """
     Create a matrix of features from a dataset
     
@@ -178,45 +179,51 @@ def create_features_matrix(dataset, category=False):
         
     Returns
     -------
-    X : np.array
-    y : np.array
+    X : pd.DataFrame
+    y : np.array (if category=True)
     """
-    height = []
-    weight = []
-    imc = []
-    category2 = []
-    # add features here (à mieux faire c'est horrible là)
-    volume_ED1 = []
-    volume_ED2 = []
-    volume_ED3 = []
-    volume_ED4 = []
-    volume_ES1 = []
-    volume_ES2 = []
-    volume_ES3 = []
-    volume_ES4 = []
+    print("Creating features matrix")
     
-    for cpt, subject in enumerate(dataset):
-        height.append(subject['height'])
-        weight.append(subject['weight'])
-        imc.append(subject['weight'] / (subject['height'] / 100) ** 2)
-        if category:
-            category2.append(int(subject['category']))
+    feature_names = ["height", "weight", "imc"]
+    features = {name: [] for name in feature_names}
+
+    if category:
+        categories = []
         
+    for cpt, subject in enumerate(tqdm(dataset)):
+        features["height"].append(subject["height"])
+        features["weight"].append(subject["weight"])
+        features["imc"].append(subject["weight"] / (subject["height"] / 100) ** 2)
+
+        if category:
+            categories.append(int(subject["category"]))
+
         voled = ft.volume_ED(cpt, dataset)
         voles = ft.volume_ES(cpt, dataset)
+
+        for i in range(len(voled)):
+            feature_name_ED = f"volume_ED{i+1}"
+            feature_name_ES = f"volume_ES{i+1}"
+            
+            if feature_name_ED not in features:
+                features[feature_name_ED] = []
+                features[feature_name_ES] = []
+            
+            features[feature_name_ED].append(voled[i])
+            features[feature_name_ES].append(voles[i])
+
+        #if "new_feature" not in features:
+        #    features["new_feature"] = []
+        #features["new_feature"].append(ft.new_feature(cpt, dataset))
         
-        volume_ED1.append(voled[0])
-        volume_ED2.append(voled[1])
-        volume_ED3.append(voled[2])
-        volume_ED4.append(voled[3])
-        volume_ES1.append(voles[0])
-        volume_ES2.append(voles[1])
-        volume_ES3.append(voles[2])
-        volume_ES4.append(voles[3])
-        
+    X = pd.DataFrame(features)
+    
+    if not dataframe:
+        X = X.to_numpy()
+
     if category:
-        return np.array([height, weight, imc, volume_ED1, volume_ED2, volume_ED3, volume_ED4, volume_ES1, volume_ES2, volume_ES3, volume_ES4]).T, np.array(category2)
-    return np.array([height, weight, imc, volume_ED1, volume_ED2, volume_ED3, volume_ED4, volume_ES1, volume_ES2, volume_ES3, volume_ES4]).T
+        return X, np.array(categories)
+    return X
 
 def submission(clf, file_name="submission", plot=True):
     """
