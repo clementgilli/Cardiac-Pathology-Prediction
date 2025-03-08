@@ -1,7 +1,7 @@
 from utilities import *
 
+import numpy as np
 from skimage.segmentation import flood_fill
-from skimage import measure, morphology
 
 def get_ES(index, dataset):
     """
@@ -95,29 +95,22 @@ def left_ventricle_cavity_segmentation(id, time, dataset):
         2 - Myocardium
         3 - Left ventricle cavity
     """
-    
     if time == "ED":
         seg = get_ED_segmentation(id, dataset)
     elif time == "ES":
         seg = get_ES_segmentation(id, dataset)
     
-    binary = seg == 2
-    
-    for slices in range(binary.shape[2]):
-        
-        label_image = measure.label(binary)
-        regions = measure.regionprops(label_image)
+    for slices in range(seg.shape[2]):
+        slice_seg = seg[:, :, slices].copy()
 
-        start_point = None
-        for region in regions:
-            start_point = region.centroid
-            break
-        
-        start_point = (int(start_point[0]), int(start_point[1]))
-        if seg[start_point[0], start_point[1], slices] == 2:
-            break
-        seg[:,:,slices] = flood_fill(seg[:,:,slices], start_point, new_value=3)
-        
+        if np.any(slice_seg != 0):  
+            slice_seg = flood_fill(slice_seg, (0, 0), new_value=4)
+
+            slice_seg[slice_seg == 0] = 3
+            slice_seg[slice_seg == 4] = 0
+
+            seg[:, :, slices] = slice_seg
+
     return seg
 
 def volume_ED(id, dataset):
