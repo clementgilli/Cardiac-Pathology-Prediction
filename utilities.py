@@ -200,7 +200,7 @@ def create_features_matrix(dataset, category=False, dataframe=False):
 
         voled = ft.volume_ED(cpt, dataset)
         voles = ft.volume_ES(cpt, dataset)
-
+        body_surface = ft.body_surface(subject["height"],subject["weight"])
         for i in range(len(voled)):
             feature_name_ED = f"volume_ED{i+1}"
             feature_name_ES = f"volume_ES{i+1}"
@@ -209,8 +209,42 @@ def create_features_matrix(dataset, category=False, dataframe=False):
                 features[feature_name_ED] = []
                 features[feature_name_ES] = []
             
-            features[feature_name_ED].append(voled[i])
-            features[feature_name_ES].append(voles[i])
+            features[feature_name_ED].append(voled[i+1]) #/body_surface)
+            features[feature_name_ES].append(voles[i+1]) #/body_surface)
+        
+        if "max_thickness_ED" not in features:
+            features["max_thickness_ED"] = []
+            features["min_thickness_ED"] = []
+            features["mean_thickness_ED"] = []
+            features["std_thickness_ED"] = []
+            #features["std2_thickness_ED"] = []
+            features["max_thickness_ES"] = []
+            features["min_thickness_ES"] = []
+            features["mean_thickness_ES"] = []
+            features["std_thickness_ES"] = []
+            #features["std2_thickness_ES"] = []
+            features["circularity_ED_LVM"] = []
+            features["circularity_ES_LVM"] = []
+            features["circularity_ED_RVC"] = []
+            features["circularity_ES_RVC"] = []
+            
+        max_thickness,min_thickness,mean_thickness,std_thickness = ft.compute_LVM_thickness(ft.get_ED_segmentation(cpt,dataset))
+        features["max_thickness_ED"].append(max_thickness)
+        features["min_thickness_ED"].append(min_thickness)
+        features["mean_thickness_ED"].append(mean_thickness)
+        features["std_thickness_ED"].append(std_thickness)
+        
+        max_thickness,min_thickness,mean_thickness,std_thickness = ft.compute_LVM_thickness(ft.get_ES_segmentation(cpt,dataset))
+        features["max_thickness_ES"].append(max_thickness)
+        features["min_thickness_ES"].append(min_thickness)
+        features["mean_thickness_ES"].append(mean_thickness)
+        features["std_thickness_ES"].append(std_thickness)
+        
+        features["circularity_ED_LVM"].append(ft.compute_circularity(ft.get_ED_segmentation(cpt,dataset)==2))
+        features["circularity_ES_LVM"].append(ft.compute_circularity(ft.get_ES_segmentation(cpt,dataset)==2))
+        features["circularity_ED_RVC"].append(ft.compute_circularity(ft.get_ED_segmentation(cpt,dataset)==1))
+        features["circularity_ES_RVC"].append(ft.compute_circularity(ft.get_ES_segmentation(cpt,dataset)==1))
+        
 
         #if "new_feature" not in features:
         #    features["new_feature"] = []
