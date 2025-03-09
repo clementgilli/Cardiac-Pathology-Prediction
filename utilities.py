@@ -208,9 +208,15 @@ def create_features_matrix(dataset, category=False, dataframe=False):
             if feature_name_ED not in features:
                 features[feature_name_ED] = []
                 features[feature_name_ES] = []
+                features["LVM_mass_ED"] = []
+                features["LVM_mass_ES"] = []
             
-            features[feature_name_ED].append(voled[i+1]) #/body_surface)
-            features[feature_name_ES].append(voles[i+1]) #/body_surface)
+            features[feature_name_ED].append(voled[i+1] /body_surface)
+            features[feature_name_ES].append(voles[i+1] /body_surface)
+            
+            
+        features["LVM_mass_ED"].append(voled[1])
+        features["LVM_mass_ES"].append(voles[1])
         
         if "max_thickness_ED" not in features:
             features["max_thickness_ED"] = []
@@ -227,24 +233,60 @@ def create_features_matrix(dataset, category=False, dataframe=False):
             features["circularity_ES_LVM"] = []
             features["circularity_ED_RVC"] = []
             features["circularity_ES_RVC"] = []
+            features["max_circumcircumference_ED_LVM"] = []
+            features["max_circumcircumference_ES_LVM"] = []
+            features["max_circumcircumference_ED_RVC"] = []
+            features["max_circumcircumference_ES_RVC"] = []
+            features["mean_circumcircumference_ED_LVM"] = []
+            features["mean_circumcircumference_ES_LVM"] = []
+            features["mean_circumcircumference_ED_RVC"] = []
+            features["mean_circumcircumference_ES_RVC"] = []
+            features["RVC_size_apex_ED"] = []
+            features["RVC_size_apex_ES"] = []
+            features["RVC_ratio_apex_ED"] = []
+            features["RVC_ratio_apex_ES"] = []
             
-        max_thickness,min_thickness,mean_thickness,std_thickness = ft.compute_LVM_thickness(ft.get_ED_segmentation(cpt,dataset))
+        ED_seg = ft.get_ED_segmentation(cpt,dataset)
+        ES_seg = ft.get_ES_segmentation(cpt,dataset)
+            
+        max_thickness,min_thickness,mean_thickness,std_thickness = ft.compute_LVM_thickness(ED_seg)
         features["max_thickness_ED"].append(max_thickness)
         features["min_thickness_ED"].append(min_thickness)
         features["mean_thickness_ED"].append(mean_thickness)
         features["std_thickness_ED"].append(std_thickness)
         
-        max_thickness,min_thickness,mean_thickness,std_thickness = ft.compute_LVM_thickness(ft.get_ES_segmentation(cpt,dataset))
+        max_thickness,min_thickness,mean_thickness,std_thickness = ft.compute_LVM_thickness(ES_seg)
         features["max_thickness_ES"].append(max_thickness)
         features["min_thickness_ES"].append(min_thickness)
         features["mean_thickness_ES"].append(mean_thickness)
         features["std_thickness_ES"].append(std_thickness)
         
-        features["circularity_ED_LVM"].append(ft.compute_circularity(ft.get_ED_segmentation(cpt,dataset)==2))
-        features["circularity_ES_LVM"].append(ft.compute_circularity(ft.get_ES_segmentation(cpt,dataset)==2))
-        features["circularity_ED_RVC"].append(ft.compute_circularity(ft.get_ED_segmentation(cpt,dataset)==1))
-        features["circularity_ES_RVC"].append(ft.compute_circularity(ft.get_ES_segmentation(cpt,dataset)==1))
+        features["circularity_ED_LVM"].append(ft.compute_circularity(ED_seg==2))
+        features["circularity_ES_LVM"].append(ft.compute_circularity(ES_seg==2))
+        features["circularity_ED_RVC"].append(ft.compute_circularity(ED_seg==1))
+        features["circularity_ES_RVC"].append(ft.compute_circularity(ES_seg==1))
         
+        max_circumcircumference_ED_LVM, mean_circumcircumference_ED_LVM = ft.compute_circumference(ED_seg==2)
+        max_circumcircumference_ES_LVM, mean_circumcircumference_ES_LVM = ft.compute_circumference(ES_seg==2)
+        max_circumcircumference_ED_RVC, mean_circumcircumference_ED_RVC = ft.compute_circumference(ED_seg==1)
+        max_circumcircumference_ES_RVC, mean_circumcircumference_ES_RVC = ft.compute_circumference(ES_seg==1)
+        
+        features["max_circumcircumference_ED_LVM"].append(max_circumcircumference_ED_LVM)
+        features["max_circumcircumference_ES_LVM"].append(max_circumcircumference_ES_LVM)
+        features["max_circumcircumference_ED_RVC"].append(max_circumcircumference_ED_RVC)
+        features["max_circumcircumference_ES_RVC"].append(max_circumcircumference_ES_RVC)
+        features["mean_circumcircumference_ED_LVM"].append(mean_circumcircumference_ED_LVM)
+        features["mean_circumcircumference_ES_LVM"].append(mean_circumcircumference_ES_LVM)
+        features["mean_circumcircumference_ED_RVC"].append(mean_circumcircumference_ED_RVC)
+        features["mean_circumcircumference_ES_RVC"].append(mean_circumcircumference_ES_RVC)
+        
+        size_apex_ED, ratio_apex_ED = ft.size_and_ratio_RVC_apex(ED_seg)
+        size_apex_ES, ratio_apex_ES = ft.size_and_ratio_RVC_apex(ES_seg)
+        
+        features["RVC_size_apex_ED"].append(size_apex_ED)
+        features["RVC_size_apex_ES"].append(size_apex_ES)
+        features["RVC_ratio_apex_ED"].append(ratio_apex_ED)
+        features["RVC_ratio_apex_ES"].append(ratio_apex_ES)
 
         #if "new_feature" not in features:
         #    features["new_feature"] = []
@@ -259,7 +301,7 @@ def create_features_matrix(dataset, category=False, dataframe=False):
         return X, np.array(categories)
     return X
 
-def submission(clf, file_name="submission", plot=True):
+def submission(clf, file_name="submission", plot=True, pca=None):
     """
     Create a submission file for Kaggle from a classifier
     
@@ -275,6 +317,8 @@ def submission(clf, file_name="submission", plot=True):
     """
     dataset_test = load_dataset("Test", test_from_file=True)
     X = create_features_matrix(dataset_test,category=False)
+    if pca is not None:
+        X = pca.transform(X)
     ids = [subject['id'] for subject in dataset_test]
     y_pred = clf.predict(X)
     if plot:

@@ -212,3 +212,44 @@ def compute_circularity(segmented_img):
         return 0
 
     return np.mean(circularities)
+
+def compute_circumference_slice(slice_mask):
+    contours = measure.find_contours(slice_mask, level=0.5)
+
+    if len(contours) == 0:
+        return 0
+
+    longest_contour = max(contours, key=len)
+
+    perimeter = np.sum(np.sqrt(np.sum(np.diff(longest_contour, axis=0) ** 2, axis=1)))
+
+    return perimeter
+
+def compute_circumference(segmented_img):
+    circumferences = [
+        compute_circumference_slice(segmented_img[:, :, i])
+        for i in range(segmented_img.shape[2])
+    ]
+
+    circumferences = [c for c in circumferences if c > 0]
+
+    if len(circumferences) == 0:
+        return 0, 0
+
+    return np.max(circumferences), np.mean(circumferences)
+
+def get_apex_LVM_slice(segmented_img):
+    for i in range(segmented_img.shape[2]-1,0,-1):
+        LVM_mask = segmented_img[:,:,i] == 2
+        if np.sum(LVM_mask) != 0:
+            return i
+    print("Error in get_apex_LVM_slice")
+    
+def size_and_ratio_RVC_apex(segmented_img):
+    index = get_apex_LVM_slice(segmented_img)
+    slice = segmented_img[:,:,index]
+    LVM_mask = slice == 2
+    RVC_mask = slice == 1
+    size_LVM = np.sum(LVM_mask)
+    size_RVC = np.sum(RVC_mask)
+    return size_RVC, size_RVC/size_LVM
