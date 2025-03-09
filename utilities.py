@@ -167,7 +167,7 @@ def modify_data(subject_index, type, new_data, dataset):
     subject[type].set_data(new_data)
     dataset._subjects[subject_index] = subject
 
-def create_features_matrix(dataset, category=False):
+def create_features_matrix(dataset, category=False, save=False):
     """
     Create a matrix of features from a dataset.
     
@@ -251,6 +251,10 @@ def create_features_matrix(dataset, category=False):
         X[cpt, 44] = ft.compute_EF(voled[0], voles[0])
         X[cpt, 45] = ft.compute_EF(voled[2], voles[2])
         X[cpt, 46] = ft.compute_EF(voled[1], voles[1])
+    
+    if save:
+        np.save("saves/features.npy", X)
+        np.save("saves/categories.npy", y)
         
     if category:
         return X, y
