@@ -131,7 +131,7 @@ def volume_ED(id, dataset):
     """
     dic = dataset[id]["ED_seg"].count_labels()
     dic.pop(0,None)
-    return dic
+    return list(dic.values())
 
 def volume_ES(id, dataset):
     """
@@ -149,7 +149,7 @@ def volume_ES(id, dataset):
     """
     dic = dataset[id]["ES_seg"].count_labels()
     dic.pop(0,None)
-    return dic
+    return list(dic.values())
 
 def body_surface(height, weight):
     return np.sqrt(height * weight / 3600)
@@ -159,15 +159,11 @@ def compute_LVM_slice_thickness(slice_segmentation):
 
     if np.sum(LVM_mask) == 0:
         return 0
-
+    
     distance_map = distance_transform_edt(LVM_mask)
     distance_map = distance_map[distance_map > 0]
-    #max_thickness = np.max(distance_map) * 2
-    #min_thickness = np.min(distance_map) * 2
     mean_thickness = np.mean(distance_map) * 2
-    #std_thickness = np.std(distance_map) * 2
     return mean_thickness
-    #return max_thickness #, min_thickness, mean_thickness, std_thickness
 
 def compute_LVM_thickness(segmented_img):
     max_thicknesses = [compute_LVM_slice_thickness(segmented_img[:, :, i]) for i in range(segmented_img.shape[2])]
@@ -253,3 +249,24 @@ def size_and_ratio_RVC_apex(segmented_img):
     size_LVM = np.sum(LVM_mask)
     size_RVC = np.sum(RVC_mask)
     return size_RVC, size_RVC/size_LVM
+
+def volume_min_max(id, dataset):
+    volumes_ED = volume_ED(id, dataset)
+    volumes_ES = volume_ES(id, dataset)
+    RVC_volumes= (volumes_ED[0], volumes_ES[0])
+    LVM_volumes = (volumes_ED[1], volumes_ES[1])
+    LVC_volumes = (volumes_ED[2], volumes_ES[2])
+    max_RVC = max(RVC_volumes)
+    max_LVM = max(LVM_volumes)
+    max_LVC = max(LVC_volumes)
+    min_RVC = min(RVC_volumes)
+    min_LVC = min(LVC_volumes)
+    argmin_LVC = np.argmin(LVC_volumes)
+    min_LVM = LVM_volumes[argmin_LVC]
+    return max_RVC, max_LVM, max_LVC, min_RVC, min_LVC, min_LVM
+    
+def compute_EF(volume_ED, volume_ES):
+    if volume_ED == 0:
+        return 0
+
+    return ((volume_ED - volume_ES) / volume_ED) * 100
