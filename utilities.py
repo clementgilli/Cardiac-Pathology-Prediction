@@ -260,7 +260,15 @@ def create_features_matrix(dataset, category=False, save=False):
         return X, y
     return X
 
-def submission(clf, file_name="submission", plot=True, pca=None):
+def filter_features(X, feature_importances, threshold=0.01):
+    important_indices = np.where(feature_importances >= threshold)[0]
+    removed_features = np.where(feature_importances < threshold)[0]
+    X_filtered = X[:, important_indices]
+    print(f"{len(removed_features)} features deleted on {X.shape[1]}")
+    
+    return X_filtered, removed_features
+
+def submission(clf, file_name="submission", plot=True, pca=None, removed_features=None):
     """
     Create a submission file for Kaggle from a classifier
     
@@ -274,11 +282,14 @@ def submission(clf, file_name="submission", plot=True, pca=None):
     -------
     None
     """
-    dataset_test = load_dataset("Test", test_from_file=True)
-    X = create_features_matrix(dataset_test,category=False)
+    #dataset_test = load_dataset("Test", test_from_file=True)
+    #X = create_features_matrix(dataset_test,category=False,save=True)
+    X = np.load("saves/test_features.npy")
     if pca is not None:
         X = pca.transform(X)
-    ids = [subject['id'] for subject in dataset_test]
+    if removed_features is not None:
+        X = np.delete(X, removed_features, axis=1)
+    ids = np.arange(101,151)
     y_pred = clf.predict(X)
     if plot:
         plt.figure(figsize=(6,5))
