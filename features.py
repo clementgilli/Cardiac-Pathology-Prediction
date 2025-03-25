@@ -2,11 +2,7 @@ from utilities import *
 
 import numpy as np
 from skimage.segmentation import flood_fill
-from scipy.ndimage import distance_transform_edt
-from skimage import measure
-from scipy.spatial import cKDTree
 from skimage.feature import canny
-from skimage.morphology import closing
 
 def get_ES(index, dataset):
     """
@@ -171,127 +167,44 @@ def body_surface(height, weight):
         In m^2
     """
     return np.sqrt(height * weight / 3600)
-
-def compute_LVM_slice_thickness(slice_segmentation, voxel_size_mm):
-    LVM_mask = (slice_segmentation == 2).astype(np.uint8)
-
-    if np.sum(LVM_mask) == 0:
-        return 0
-    
-    distance_map = distance_transform_edt(LVM_mask) * voxel_size_mm[0]
-    distance_map = distance_map[distance_map > 0]
-    mean_thickness = np.mean(distance_map) * 2
-    return mean_thickness
-
-def compute_LVM_thickness(segmented_img, voxel_size_mm):
-    max_thicknesses = [compute_LVM_slice_thickness(segmented_img[:, :, i], voxel_size_mm) for i in range(segmented_img.shape[2])]
-    return (
-        np.max(max_thicknesses),  
-        np.min(max_thicknesses),
-        np.mean(max_thicknesses),
-        np.std(max_thicknesses)   
-    )
-    
-def compute_circularity_slice(slice_mask):
-    
-    mask = (slice_mask > 0).astype(np.uint8)
-
-    contours = measure.find_contours(mask, level=0.5)
-
-    if len(contours) == 0:
-        return 0  
-    
-    external_contour = max(contours, key=len)
-
-    perimeter = np.sum(np.sqrt(np.sum(np.diff(external_contour, axis=0) ** 2, axis=1)))
-
-    area = np.sum(mask)
-
-    if perimeter == 0:
-        return 0 
-
-    circularity = (4 * np.pi * area) / (perimeter ** 2)
-
-    return circularity
-
-def compute_circularity(segmented_img):
-    circularities = [
-        compute_circularity_slice(segmented_img[:, :, i])
-        for i in range(segmented_img.shape[2])
-    ]
-
-    circularities = [c for c in circularities if c > 0]
-
-    if len(circularities) == 0:
-        return 0
-
-    return np.mean(circularities)
-
-def compute_circumference_slice(slice_mask, voxel_size_mm):
-    contours = measure.find_contours(slice_mask, level=0.5)
-
-    if len(contours) == 0:
-        return 0
-
-    longest_contour = max(contours, key=len)
-
-    perimeter = np.sum(np.sqrt(np.sum(np.diff(longest_contour, axis=0) ** 2, axis=1)))
-
-    return perimeter * voxel_size_mm[0]
-
-def compute_circumference(segmented_img, voxel_size_mm):
-    circumferences = [
-        compute_circumference_slice(segmented_img[:, :, i],voxel_size_mm)
-        for i in range(segmented_img.shape[2])
-    ]
-
-    circumferences = [c for c in circumferences if c > 0]
-
-    if len(circumferences) == 0:
-        return 0, 0
-
-    return np.max(circumferences), np.mean(circumferences)
-
-def get_apex_LVM_slice(segmented_img):
-    for i in range(segmented_img.shape[2]-1,0,-1):
-        LVM_mask = segmented_img[:,:,i] == 2
-        if np.sum(LVM_mask) != 0:
-            return i
-    print("Error in get_apex_LVM_slice")
-    
-def size_and_ratio_RVC_apex(segmented_img, voxel_size_mm):
-    index = get_apex_LVM_slice(segmented_img)
-    slice = segmented_img[:,:,index]
-    LVC_mask = slice == 3
-    RVC_mask = slice == 1
-    size_LVC = np.sum(LVC_mask) * np.prod(voxel_size_mm)
-    size_RVC = np.sum(RVC_mask) * np.prod(voxel_size_mm)
-    if size_LVC == 0:
-        return 0
-    return size_RVC, size_RVC/size_LVC
-
-def volume_min_max(id, dataset, voxel_size_mm):
-    volumes_ED = volume_ED(id, dataset, voxel_size_mm)
-    volumes_ES = volume_ES(id, dataset, voxel_size_mm)
-    RVC_volumes= (volumes_ED[0], volumes_ES[0])
-    LVM_volumes = (volumes_ED[1], volumes_ES[1])
-    LVC_volumes = (volumes_ED[2], volumes_ES[2])
-    max_RVC = max(RVC_volumes)
-    max_LVM = max(LVM_volumes)
-    max_LVC = max(LVC_volumes)
-    min_RVC = min(RVC_volumes)
-    min_LVC = min(LVC_volumes)
-    argmin_LVC = np.argmin(LVC_volumes)
-    min_LVM = LVM_volumes[argmin_LVC]
-    return max_RVC, max_LVM, max_LVC, min_RVC, min_LVC, min_LVM
     
 def compute_EF(volume_ED, volume_ES):
+    """
+    Compute the ejection fraction of a subject
+    
+    Parameters
+    ----------
+    volume_ED : float
+        Volume of the left ventricle at end-diastole
+    volume_ES : float
+        Volume of the left ventricle at end-systole
+        
+    Returns
+    -------
+    float
+        In percentage
+    """
     if volume_ED == 0:
         return 0
 
     return (volume_ED - volume_ES / volume_ED) * 100.0
 
 def find_min_dists(edges_ext, edges_int):
+    """
+    Find the minimum distance between the edges of the myocardium
+    
+    Parameters
+    ----------
+    edges_ext : np.array
+        External edges of the myocardium
+    edges_int : np.array
+        Internal edges of the myocardium
+        
+    Returns
+    -------
+    np.array
+        The minimum distances
+    """
     min_dists = []
     int_coords = np.argwhere(edges_int)
     ext_coords = np.argwhere(edges_ext)
@@ -301,6 +214,27 @@ def find_min_dists(edges_ext, edges_int):
     return np.array(min_dists)
 
 def myocardial_wall_thickness(seg_img, voxel_size_mm):
+    """
+    Compute the myocardial wall thickness of a subject
+    
+    Parameters
+    ----------
+    seg_img : np.array
+        Segmentation of the myocardium
+    voxel_size_mm : tuple
+        Voxel size in mm
+        
+    Returns
+    -------
+    float
+        Maximum mean distance between the edges of the myocardium
+    float
+        Standard deviation of the mean distances
+    float
+        Mean standard deviation of the distances
+    float
+        Standard deviation of the standard deviations
+    """
     means, stds = [], []
     for i in range(seg_img.shape[2]):
         slic = seg_img[:,:,i]

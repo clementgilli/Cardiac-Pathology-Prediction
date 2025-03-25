@@ -9,7 +9,6 @@ from pathlib import Path
 import torch
 import copy
 from tqdm import tqdm
-from sklearn.model_selection import RepeatedStratifiedKFold, RandomizedSearchCV
 
 def create_subject(patient_id, category, weight, height, base_path="Dataset/Train"):
     """
@@ -41,7 +40,7 @@ def create_subject(patient_id, category, weight, height, base_path="Dataset/Trai
     )
     return subject
 
-def load_dataset(type,transform = True,test_from_file = False):
+def load_dataset(type,test_from_file = False):
     """
     Load the dataset from the csv file and images
     
@@ -49,7 +48,10 @@ def load_dataset(type,transform = True,test_from_file = False):
     ----------
     type : str
         'Train' or 'Test'
-    
+        
+    test_from_file : bool
+        If True, the test dataset test will be loaded from the segmented images (LV segmentation)
+        
     Returns
     -------
     subjects : tio.SubjectsDataset
@@ -82,20 +84,7 @@ def load_dataset(type,transform = True,test_from_file = False):
         except Exception as e:
             print(f"Error with patient {patient_id}: {e}")
 
-    if transform:
-        landmarks = {
-        'ED': "saves/ED_landmarks.npy",
-        'ES': "saves/ES_landmarks.npy"
-        }
-        histo_stand = tio.HistogramStandardization(landmarks)
-        transform = tio.Compose([
-        histo_stand,
-        tio.RescaleIntensity(out_min_max=(0, 1)),
-        ])
-        dataset =  tio.SubjectsDataset(subjects, transform=transform)
-    
-    else:
-        dataset = tio.SubjectsDataset(subjects)
+    dataset = tio.SubjectsDataset(subjects)
     
     if type == "Test" and not test_from_file:
         for i in range(len(dataset)):
@@ -114,39 +103,6 @@ def load_dataset(type,transform = True,test_from_file = False):
             dataset[i]["ES"].save(f"Dataset/Test/Segmented/{str(index).zfill(3)}/{str(index).zfill(3)}_ES.nii")
     print(f"Loaded {len(subjects)} subjects")
     return dataset
-
-def create_landmarks_hist(ED_name = "ED_landmarks", ES_name = "ES_landmarks"):
-    """
-    Create the landmarks for the histogram standardization
-    
-    Parameters
-    ----------
-    ED_name : str
-    ES_name : str
-    
-    Returns
-    -------
-    None
-    """
-
-    ED_paths = [f"Dataset/Train/{str(subject).zfill(3)}/{str(subject).zfill(3)}_ED.nii" for subject in range(1, 101)]
-    ES_paths = [f"Dataset/Train/{str(subject).zfill(3)}/{str(subject).zfill(3)}_ES.nii" for subject in range(1, 101)]
-
-    ED_landmarks_path = Path('ED_name.npy')
-    ES_landmarks_path = Path('ES_name.npy')
-
-    ED_landmarks = (
-        ED_landmarks_path
-        if ED_landmarks_path.is_file()
-        else tio.HistogramStandardization.train(ED_paths)
-    )
-    ES_landmarks = (
-        ES_landmarks_path
-        if ES_landmarks_path.is_file()
-        else tio.HistogramStandardization.train(ES_paths)
-    )
-    np.save(ED_landmarks_path, ED_landmarks)
-    np.save(ES_landmarks_path, ES_landmarks)
 
 def modify_data(subject_index, type, new_data, dataset):
     """"
@@ -218,48 +174,8 @@ def submission(y_pred, file_name="submission", plot=True):
     df = pd.DataFrame(list(zip(ids, y_pred)), columns=["Id","Category"])
     df.to_csv(file_name+".csv", index=False,sep=",")
     print(f"Submission file {file_name}.csv created")
-    
-def random_search_hyperparameters(clf, param_dist, X, y, n_splits=5, n_repeats=3):
-    """
-    Perform a random search for hyperparameters
-    
-    Parameters
-    ----------
-    clf : sklearn classifier
-    param_dist : dict
-    X : np.array
-    y : np.array
-    n_splits : int
-    n_repeats : int
-    
-    Returns
-    -------
-    best_estimator : sklearn classifier
-    """
-    cv = RepeatedStratifiedKFold(n_splits=n_splits, n_repeats=n_repeats, random_state=0)
-    random_search = RandomizedSearchCV(
-        clf, param_distributions=param_dist, 
-        n_iter=50, cv=cv, scoring="accuracy", 
-        n_jobs=-1, random_state=0, return_train_score=True
-    )
 
-    random_search.fit(X, y)
-
-    print("Best params found :", random_search.best_params_)
-
-    best_index = random_search.best_index_
-    mean_val_score = random_search.cv_results_['mean_test_score'][best_index]
-    std_val_score = random_search.cv_results_['std_test_score'][best_index]
-
-    print(f"Validation Accuracy: {mean_val_score:.3f} ± {std_val_score:.3f}")
-
-    mean_train_score = random_search.cv_results_['mean_train_score'][best_index]
-    std_train_score = random_search.cv_results_['std_train_score'][best_index]
-
-    print(f"Train Accuracy: {mean_train_score:.3f} ± {std_train_score:.3f}")
-    return random_search.best_estimator_
-
-def create_features_matrix_Khened(dataset, category=False, save=False):
+def create_features_matrix(dataset, category=False, save=False):
     """
     Create a matrix of features from a dataset.
     
@@ -309,190 +225,6 @@ def create_features_matrix_Khened(dataset, category=False, save=False):
     if save:
         np.save("saves/features_Khened.npy", X)
     
-    if category:
-        return X, y
-    return X
-
-def create_features_matrix_Isensee(dataset, category=False, save=False):
-    """
-    Create a matrix of features from a dataset.
-    
-    Parameters
-    ----------
-    dataset : tio.SubjectsDataset
-    category : bool
-        If True, the function will return the categories (for training)
-        
-    Returns
-    -------
-    X : np.array
-    y : np.array (if category=True)
-    """
-    print("Creating features matrix")
-
-    N = len(dataset)
-    NUM_FEATURES = 53
-    
-    X = np.zeros((N, NUM_FEATURES))
-    
-    if category:
-        y = np.zeros(N)
-
-    for cpt, subject in enumerate(tqdm(dataset)):
-        
-        # =================== INSTANT FEATURES ===================
-        
-        # ------------------- 1 - Subject data -------------------
-        height = subject["height"]
-        weight = subject["weight"]
-        imc = weight / (height / 100) ** 2
-        body_surface = ft.body_surface(height, weight)
-        voxel_size_mm = subject["ED"].spacing
-
-        X[cpt, 0:3] = [height, weight, imc]  # Columns 0,1,2
-
-        if category:
-            y[cpt] = int(subject["category"])
-        
-        # ------------------- 2 - Segmentation Extraction -------------------
-        ED_seg = ft.get_ED_segmentation(cpt, dataset)
-        ES_seg = ft.get_ES_segmentation(cpt, dataset)
-
-        # ------------------- 3 - ED/ES Volume -------------------
-        voled = ft.volume_ED(cpt, dataset,voxel_size_mm)/body_surface 
-        voles = ft.volume_ES(cpt, dataset,voxel_size_mm)/body_surface
-        X[cpt, 3:6] = voled  # Columns 3,4,5
-        X[cpt, 6:9] = voles  # Columns 6,7,8
-
-        # ------------------- 4 - LVM Thicknesses -------------------
-        X[cpt, 9:13] = ft.compute_LVM_thickness(ED_seg,voxel_size_mm)  # Max, Min, Mean, Std (col 9-12)
-        X[cpt, 13:17] = ft.compute_LVM_thickness(ES_seg,voxel_size_mm)  # Max, Min, Mean, Std (col 13-16)
-
-        # ------------------- 5 - LVM and RVC Circularity -------------------
-        X[cpt, 17] = ft.compute_circularity(ED_seg == 2)  # Circularité LVM ED
-        X[cpt, 18] = ft.compute_circularity(ES_seg == 2)  # Circularité LVM ES
-        X[cpt, 19] = ft.compute_circularity(ED_seg == 1)  # Circularité RVC ED
-        X[cpt, 20] = ft.compute_circularity(ES_seg == 1)  # Circularité RVC ES
-
-        # ------------------- 6 - LVM and RVC Circumference -------------------
-        X[cpt, 21:23] = ft.compute_circumference(ED_seg == 2,voxel_size_mm)  # Max & Mean Circum ED LVM
-        X[cpt, 23:25] = ft.compute_circumference(ES_seg == 2,voxel_size_mm)  # Max & Mean Circum ES LVM
-        X[cpt, 25:27] = ft.compute_circumference(ED_seg == 1,voxel_size_mm)  # Max & Mean Circum ED RVC
-        X[cpt, 27:29] = ft.compute_circumference(ES_seg == 1,voxel_size_mm)  # Max & Mean Circum ES RVC
-
-        # ------------------- 7 - RVC apex -------------------
-        X[cpt, 29:31] = ft.size_and_ratio_RVC_apex(ED_seg,voxel_size_mm) # Size & Ratio ED
-        X[cpt, 31:33] = ft.size_and_ratio_RVC_apex(ES_seg,voxel_size_mm) # Size & Ratio ES
-        
-        # =================== DYNAMIC VOLUME FEATURES ===================
-        vmax_RVC, vmax_LVM, vmax_LVC, vmin_RVC, vmin_LVC, vmin_LVM = ft.volume_min_max(cpt, dataset, voxel_size_mm)
-        X[cpt, 33:39] = [vmax_RVC, vmax_LVM, vmax_LVC, vmin_RVC, vmin_LVC, vmin_LVM]
-        X[cpt, 39] = vmin_LVC/vmin_RVC
-        X[cpt, 40] = vmin_LVM/vmin_LVC
-        X[cpt, 41] = vmin_RVC/vmin_LVM
-        
-        X[cpt, 42] = voled[0]/voled[2]
-        X[cpt, 43] = voles[1]/voles[2]
-        
-        X[cpt, 44] = ft.compute_EF(voled[0], voles[0])
-        X[cpt, 45] = ft.compute_EF(voled[2], voles[2])
-        X[cpt, 46] = ft.compute_EF(voled[1], voles[1])
-        
-        X[cpt, 47] = voles[0]/voles[2]
-        X[cpt, 48] = voled[1]/voled[2]
-        
-        X[cpt, 49:51] = ft.compute_LVM_thickness2(ED_seg,voxel_size_mm)
-        X[cpt, 51:53] = ft.compute_LVM_thickness2(ES_seg,voxel_size_mm)
-        
-    
-    if save:
-        np.save("saves/features_Isensee.npy", X)
-        np.save("saves/categories.npy", y)
-        
-    if category:
-        return X, y
-    return X
-
-
-
-def create_features_matrix_Wolterink(dataset, category=False, save=False):
-    """
-    Create a matrix of features from a dataset.
-    
-    Parameters
-    ----------
-    dataset : tio.SubjectsDataset
-    category : bool
-        If True, the function will return the categories (for training)
-        
-    Returns
-    -------
-    X : np.array
-    y : np.array (if category=True)
-    """
-    print("Creating features matrix")
-
-    N = len(dataset)
-    NUM_FEATURES = 27
-    
-    X = np.zeros((N, NUM_FEATURES))
-    
-    if category:
-        y = np.zeros(N)
-
-    for cpt, subject in enumerate(tqdm(dataset)):
-        
-        # =================== INSTANT FEATURES ===================
-        ED_seg = ft.get_ED_segmentation(cpt, dataset)
-        ES_seg = ft.get_ES_segmentation(cpt, dataset)
-        # ------------------- 1 - Subject data -------------------
-        height = subject["height"]
-        weight = subject["weight"]
-        body_surface = ft.body_surface(height, weight)
-        voxel_size_mm = subject["ED"].spacing
-
-        X[cpt, 0:2] = [height, weight]  # Columns 0,1,2
-
-        if category:
-            y[cpt] = int(subject["category"])
-            
-        # ------------------- 3 - ED/ES Volume -------------------
-        voled = ft.volume_ED(cpt, dataset,voxel_size_mm)/body_surface
-        voles = ft.volume_ES(cpt, dataset,voxel_size_mm)/body_surface
-        X[cpt, 2:5] = voled  # Columns 3,4,5
-        X[cpt, 5:8] = voles  # Columns 6,7,8
-        
-        X[cpt, 8] = ft.compute_EF(voled[0], voles[0])
-        X[cpt, 9] = ft.compute_EF(voled[2], voles[2])
-        
-        X[cpt, 10] = voled[0]/voled[2]
-        X[cpt, 11] = voles[0]/voles[2]
-        X[cpt, 12] = voled[1]/voled[2]
-        X[cpt, 13] = voles[1]/voles[2]
-        
-        vmax_RVC, vmax_LVM, vmax_LVC, vmin_RVC, vmin_LVC, vmin_LVM = ft.volume_min_max(cpt, dataset,voxel_size_mm)
-        X[cpt, 14] = vmin_LVC/vmin_RVC
-        X[cpt, 15] = vmin_LVM/vmin_LVC
-        X[cpt, 16] = vmin_RVC/vmin_LVM
-        
-        X[cpt, 17] = ft.compute_circularity(ED_seg == 2)
-        X[cpt, 18] = ft.compute_circularity(ES_seg == 2)
-        
-        X[cpt, 19:21] = ft.size_and_ratio_RVC_apex(ED_seg,voxel_size_mm) # Size & Ratio ED
-        X[cpt, 21:23] = ft.size_and_ratio_RVC_apex(ES_seg,voxel_size_mm) # Size & Ratio ES
-        
-        maxi,_,mean,_ = ft.compute_LVM_thickness(ED_seg,voxel_size_mm)
-        X[cpt, 23] = maxi
-        X[cpt, 24] = mean
-        maxi,_,mean,_ = ft.compute_LVM_thickness(ES_seg,voxel_size_mm)
-        X[cpt, 25] = maxi
-        X[cpt, 26] = mean
-        
-    
-    if save:
-        np.save("saves/features_Wolterink.npy", X)
-        np.save("saves/categories.npy", y)
-        
     if category:
         return X, y
     return X
