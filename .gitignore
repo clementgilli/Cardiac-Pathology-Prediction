@@ -1,4 +1,6 @@
 Dataset/
+*.csv
+*.json
 
 ### JupyterNotebooks ###
 # gitignore template for Jupyter Notebooks
@@ -93,7 +95,7 @@ docs/_build/
 target/
 
 # Jupyter Notebook
-
+test.ipynb
 # IPython
 
 # pyenv
