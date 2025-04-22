@@ -9,6 +9,8 @@ from pathlib import Path
 import torch
 import copy
 from tqdm import tqdm
+from sklearn.neural_network import MLPClassifier
+from sklearn.model_selection import StratifiedKFold, cross_val_score
 
 def create_subject(patient_id, category, weight, height, base_path="Dataset/Train"):
     """
@@ -228,3 +230,53 @@ def create_features_matrix(dataset, category=False, save=False):
     if category:
         return X, y
     return X
+
+def objective_mlp_opti(trial, X, y):
+    """
+    Objective function for Optuna optimization of MLPClassifier.
+    
+    Parameters
+    ----------
+    trial : optuna.Trial
+    X : np.array
+        Features matrix
+    y : np.array
+        Labels (categories)
+        
+    Returns
+    -------
+    float
+        Mean accuracy score of the MLPClassifier on the cross-validation folds.
+    """
+    hidden_options = ["100-100", "100-100-100"]
+    alpha = trial.suggest_float("alpha", 1e-6, 1e-2, log=True)
+    solver = trial.suggest_categorical("solver", ["adam", "lbfgs"])
+    activation = trial.suggest_categorical("activation", ["relu", "tanh"])
+    learning_rate = trial.suggest_categorical("learning_rate", ["constant", "adaptive"])
+    learning_rate_init = trial.suggest_float("learning_rate_init", 1e-4, 1e-1, log=True)
+    early_stopping = trial.suggest_categorical("early_stopping", [True, False])
+    
+    hidden_key = trial.suggest_categorical("hidden_layer_sizes", hidden_options)
+    hidden_layer_sizes = tuple(map(int, hidden_key.split("-")))
+
+
+    clf = MLPClassifier(
+        hidden_layer_sizes=hidden_layer_sizes,
+        alpha=alpha,
+        solver=solver,
+        activation=activation,
+        learning_rate=learning_rate,
+        learning_rate_init=learning_rate_init,
+        early_stopping=early_stopping,
+        max_iter=1000,
+        random_state=0
+    )
+
+    scores = cross_val_score(
+        clf,
+        X,
+        y,
+        cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=0),
+        scoring='accuracy'
+    )
+    return scores.mean()
