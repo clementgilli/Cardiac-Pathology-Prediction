@@ -1,4 +1,5 @@
 import features as ft
+from models import MLP
 
 import torchio as tio
 import pandas as pd
@@ -10,7 +11,9 @@ import torch
 import copy
 from tqdm import tqdm
 from sklearn.neural_network import MLPClassifier
+from sklearn.ensemble import VotingClassifier
 from sklearn.model_selection import StratifiedKFold, cross_val_score
+from sklearn.metrics import accuracy_score
 
 def create_subject(patient_id, category, weight, height, base_path="Dataset/Train"):
     """
@@ -259,7 +262,6 @@ def objective_mlp_opti(trial, X, y):
     hidden_key = trial.suggest_categorical("hidden_layer_sizes", hidden_options)
     hidden_layer_sizes = tuple(map(int, hidden_key.split("-")))
 
-
     clf = MLPClassifier(
         hidden_layer_sizes=hidden_layer_sizes,
         alpha=alpha,
@@ -280,3 +282,134 @@ def objective_mlp_opti(trial, X, y):
         scoring='accuracy'
     )
     return scores.mean()
+
+def objective_expert(trial, X_expert, y_expert):
+        """
+        Objective function for Optuna optimization of MLPClassifier for the expert model.
+        
+        Parameters
+        ----------
+        trial : optuna.Trial
+            Optuna trial object
+        X_expert : np.array
+            Features matrix for the expert model
+        y_expert : np.array
+            Labels (categories) for the expert model
+        
+        Returns
+        -------
+        float
+            Mean accuracy score of the MLPClassifier on the cross-validation folds.
+        """
+        hidden_dim = trial.suggest_int("hidden_dim", 16, 128)
+        n_layers = trial.suggest_int("n_layers", 1, 3)
+        dropout = trial.suggest_float("dropout", 0.3, 0.6)
+        lr = trial.suggest_float("lr", 1e-4, 1e-2, log=True)
+        weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-2, log=True)
+
+        skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=0)
+        val_scores = []
+
+        for train_idx, val_idx in skf.split(X_expert, y_expert):
+            X_train, X_val = X_expert[train_idx], X_expert[val_idx]
+            y_train, y_val = y_expert[train_idx], y_expert[val_idx]
+
+            model = MLP(
+                input_dim=X_expert.shape[1],
+                hidden_dim=hidden_dim,
+                n_layers=n_layers,
+                dropout=dropout,
+                lr=lr,
+                weight_decay=weight_decay,
+                epochs=800
+            )
+
+            model.fit(X_train, y_train)
+            y_pred = model.predict(X_val)
+            acc = accuracy_score(y_val, y_pred)
+            val_scores.append(acc)
+
+        return np.mean(val_scores)
+
+def stage1(X, y, clfs, voting='hard'):
+    """
+    Create a voting classifier from a list of classifiers and fit it to the data.
+    
+    Parameters
+    ----------
+    X : np.array
+        Features matrix
+    y : np.array
+        Labels (categories)
+    clfs : list
+        List of classifiers
+    voting : str
+        Voting method ('hard' or 'soft')
+        
+    Returns
+    -------
+    eclf : VotingClassifier
+        Voting classifier fitted to the data
+    """
+    eclf = VotingClassifier(estimators=clfs, voting=voting)
+    eclf = eclf.fit(X, y)
+    return eclf
+
+def stage2(X_test, y_pred, mlp_expert_fitted):
+    """
+    Create a second stage classifier to refine the predictions of the first stage classifier.
+    
+    Parameters
+    ----------
+    X_test : np.array
+        Features matrix of the test set
+    y_pred : np.array
+        Predictions of the first stage classifier
+    mlp_expert_fitted : MLPClassifier
+        MLP classifier fitted to the data
+    Returns
+    -------
+    y_pred : np.array
+        Refined predictions
+    """
+    round2 = []
+    for i,pred in enumerate(y_pred):
+        if pred == 1 or pred == 2:
+            round2.append(i)
+    if len(round2) == 0:
+        return y_pred
+    Xround2 = X_test[round2][:,16:20]
+    
+    y_pred2 = mlp_expert_fitted.predict(Xround2)
+    y_pred[round2] = y_pred2
+    return y_pred
+
+def predictions(X, y, X_test, clfs, mlp_expert_fitted=None, voting='hard'):
+    """
+    Predict the labels of the test set using a two-stage classifier.
+    
+    Parameters
+    ----------
+    X : np.array
+        Features matrix of the training set
+    y : np.array
+        Labels (categories) of the training set
+    X_test : np.array
+        Features matrix of the test set
+    clfs : list
+        List of classifiers for the first stage
+    mlp_expert_fitted : MLPClassifier
+        MLP classifier fitted to the data for the second stage (if None, no second stage)
+    voting : str
+        Voting method for the first stage classifier ('hard' or 'soft')
+    Returns
+    -------
+    y_pred : np.array
+        Predicted labels of the test set
+    """
+    clf = stage1(X, y, clfs, voting)
+    y_pred = clf.predict(X_test)
+    if mlp_expert_fitted is None:
+        return y_pred
+    y_pred = stage2(X_test, y_pred, mlp_expert_fitted)
+    return y_pred

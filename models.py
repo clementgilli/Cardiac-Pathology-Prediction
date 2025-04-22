@@ -4,12 +4,13 @@ import torch
 import numpy as np
 
 class MLP(nn.Module):
-    def __init__(self, input_dim, hidden_dim, n_layers, dropout, output_dim=2, lr=1e-3, weight_decay=1e-3, epochs=1000):
+    def __init__(self, input_dim, hidden_dim, n_layers, dropout, output_dim=2, lr=1e-3, weight_decay=1e-3, epochs=1000, verbose=False):
         
         super().__init__()
         self.lr = lr
         self.weight_decay = weight_decay
         self.epochs = epochs
+        self.verbose = verbose
         
         in_dim = input_dim
         layers = []
@@ -48,7 +49,7 @@ class MLP(nn.Module):
                 loss = criterion(outputs, batch_y)
                 loss.backward()
                 optimizer.step()
-            if epoch % 1000 == 0:
+            if epoch % 100 == 0 and self.verbose:
                 print(f"Epoch {epoch} ; Accuracy {(outputs.argmax(dim=1)==batch_y).sum()/len(batch_y)}")
         return self
 
