@@ -1,6 +1,6 @@
 # Cardiac Pathology Prediction
 
-This project tackles the automatic classification of cardiac pathologies from MRI using handcrafted features and machine learning models. It was developed as part of the IMA205 course for this [Kaggle challenge](https://www.kaggle.com/competitions/ima-205-challenge-2025/overview").
+This project tackles the automatic classification of cardiac pathologies from MRI using handcrafted features and machine learning models. It was developed as part of the IMA205 course for this [Kaggle challenge](https://www.kaggle.com/competitions/ima-205-challenge-2025).
 
 ## Challenge
 The task is to classify each patient into one of five categories:
